@@ -130,7 +130,7 @@ Helper.NOTIFICATIONS_TOPIC = "arn:aws:sns:us-east-1:001768463823:MicroServiceCom
 Helper.SKIP_NOTIFICATIONS = "true";
 Helper.API_CLIENT_URL = "https://mz7zlecpcc.execute-api.us-east-1.amazonaws.com/prod";
 
-Helper.AWS_PROFILE_MAME = "rehan";
+Helper.AWS_PROFILE_MAME = "rehan-demo";
 Helper.AWS_PROFILE_REGION = "us-east-1";
 
 Helper.TEST_AGAINST__DEVELOPMENT = TEST_AGAINST__DEVELOPMENT;

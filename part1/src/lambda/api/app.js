@@ -39,7 +39,7 @@ exports.handler = async (event, context) =>
     let auditRecord = new audit_log(audit_log.GetNewID(), logger.getTraceId(), null,
         null, null, null, null,
         null, "api", "MicroServiceCommon::api", null,
-        null, moment().utc().format("YYYY-MM-DD HH:mm:ss.SSS"),
+        null, moment().utc().format("YYYY-MM-DD HH:mm:ss.SSS"), null,
         process.env.ENVIRONMENT, process.env.VERSION, process.env.BUILD);
 
     try
