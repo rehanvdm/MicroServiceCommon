@@ -1,0 +1,92 @@
+openapi: "3.0.0"
+
+info:
+  version: 0.0.1
+  title: Person Service API
+
+paths:
+  /v1/ping/pong:
+    post:
+      summary: Checks to see if the API GW and Lambda is up.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                control:
+                  type: object
+                data:
+                  type: object
+              example:
+                control: {}
+                data: {}
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  control:
+                    type: object
+                    properties:
+                      ResponseCode:
+                        type: number
+                      TraceID:
+                        type: string
+                  data:
+                    type: string
+                example:
+                  control:
+                    ResponseCode: 2000
+                    TraceID: "f1a8207b-a1e5-4ef4-8425-9ecaa7e1a457"
+                  data: "Pong"
+
+  /v1/process/person_created:
+    post:
+      summary: Creates a person
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                control:
+                  type: object
+                data:
+                  type: object
+                  properties:
+                    client_id:
+                      type: string
+                    name:
+                      type: string
+              example:
+                control: {}
+                data:
+                  client_id: "94a72d65-b27e-4a84-be46-1bdc237f7a8f"
+                  name: "Rehan"
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  control:
+                    type: object
+                    properties:
+                      ResponseCode:
+                        type: number
+                      TraceID:
+                        type: string
+                  data:
+                    type: boolean
+
+                example:
+                  control:
+                    ResponseCode: 2000
+                    TraceID: "f3a04797-8d56-4604-ad10-933feccf7015"
+                  data: true
