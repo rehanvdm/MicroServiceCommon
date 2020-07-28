@@ -17,5 +17,14 @@ class LambdaEvents
                 };
     }
 
+    static EVENT_BRIDGE(event)
+    {
+        return {
+            DetailType: event["detail-type"],
+            Source: event.source,
+            Detail: event.detail
+        };
+    }
+
 }
 module.exports = LambdaEvents;

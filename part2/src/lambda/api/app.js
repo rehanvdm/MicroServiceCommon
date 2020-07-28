@@ -44,14 +44,14 @@ exports.handler = async (event, context) =>
 
     try
     {
-        let request = LambdaEvents.API_GATEWAY__PROXY(event);
+        let request = LambdaEvents.EVENT_BRIDGE(event);
 
         /* If the API call comes from one of the other MicroService API calls, change this lambda log trace-d to match it */
-        if(request.Headers["micro-service-trace-id"])
+        if(request.Detail["micro-service-trace-id"])
         {
             logger.log("Changing trace_id");
-            logger.setTraceId(request.Headers["micro-service-trace-id"]);
-            auditRecord.trace_id = request.Headers["micro-service-trace-id"];
+            logger.setTraceId(request.Detail["micro-service-trace-id"]);
+            auditRecord.trace_id = request.Detail["micro-service-trace-id"];
         }
 
         if(process.env.ENABLE_CHAOS === "true" && process.env.INJECT_ERROR === "handled")
@@ -62,54 +62,23 @@ exports.handler = async (event, context) =>
         // else
         logger.log("Request", request);
 
-        if(request.HttpMethod !== "POST")
-            throw new LambdaError.HandledError("GET is not supported, please POST");
-
-        try { request.Body = JSON.parse(request.Body); } catch (e) { request.Body = null; }
-
-        if(!request.Body || typeof request.Body !== 'object')
-            throw new LambdaError.HandledError("POST Body is not valid JSON");
-        else if(!request.Body.control)
-            throw new LambdaError.HandledError("API control object not specified in post body (control)");
-
-        request.Body.control = request.Body.control || null;
-
-        /* Remove trailing slash if have from /v1/ping/pong */
-        if(request.Path.endsWith('/'))
-            request.Path = request.Path.substring(0,request.Path.length-1);
-
-        let requestResourceParts = request.Path.split('/', 4);
-        let version = requestResourceParts[1] || null;      //  v1
-        let reqType = requestResourceParts[2] || null;      //  ping
-        let reqAction = requestResourceParts[3] || null;    //  pong
-
-
+        let [,,,version] = request.Source.split('.', 4);
+        let reqType = request.DetailType;
         let authUser = null;
+        let body = { data : request.Detail }; /* Wrapping like this so that we don't have to change the business logic */
 
-        /* Here you would get the Cognito user from the request.CognitoUser and use some of those properties
-         *  but for the sake of simplicity the caller is just passing that along for demonstration */
-        if(request.Body.control.user_id)
-        {
-            let authUser = { user_id: request.Body.control.user_id };
-            logger.info("authUser", authUser);
-            if(awsXray.getSegment())
-                awsXray.getSegment().setUser(auditRecord.user_id);
-        }
+        auditRecord.origin = request.Source;
+        auditRecord.origin_path = reqType;
 
-        auditRecord.origin_path = request.Path;
-        auditRecord.meta = request.HttpMethod;
-
-
+        console.log(version,reqType);
         /* Create an instance of the class dynamically, ex: ./v1/link.js, since we whitelisted the functions
          * above so just assume that it is there and that we can execute it */
-        apiClass = new (require('./'+version+'/'+reqType+'.js'))(aws, awsXray);
-        let reqResp = await apiClass[reqAction](authUser, request.Body);
-
-        reqResp.control = Object.assign(reqResp.control ? reqResp.control : {}, {"TraceID": logger.getTraceId()});
+        apiClass = new (require('./'+version+'/process.js'))(aws, awsXray);
+        let reqResp = await apiClass[reqType](authUser, body);
 
         auditRecord.status = true;
-        auditRecord.status_code = 2000;
-        response = LambdaResponse.API_GATEWAY(auditRecord.status_code, reqResp.body, reqResp.control);
+        auditRecord.status_code = 2001;
+        response = true;
 
         /* IF the call wants to customize the values stored for audit log
            Explicitly assign fields to main_audit_record that got from response */
@@ -131,28 +100,16 @@ exports.handler = async (event, context) =>
         auditRecord.raise_alarm = true; /* Later do sampling */
         auditRecord.status_description = err.message;
 
-        let extraControl = { "TraceID": logger.getTraceId() };
-
         if(err instanceof LambdaError.HandledError)
-        {
             auditRecord.status_code = 5001;
-            response = LambdaResponse.API_GATEWAY(auditRecord.status_code, auditRecord.status_description, extraControl);
-        }
         else if(err instanceof LambdaError.ValidationError)
-        {
             auditRecord.status_code = 5002;
-            response = LambdaResponse.API_GATEWAY(auditRecord.status_code, auditRecord.status_description, extraControl);
-        }
         else if(err instanceof LambdaError.AuthError)
-        {
             auditRecord.status_code = 3001;
-            response = LambdaResponse.API_GATEWAY(auditRecord.status_code, auditRecord.status_description, extraControl);
-        }
         else
-        {
             auditRecord.status_code = 5000;
-            response = LambdaResponse.API_GATEWAY(auditRecord.status_code, "Unexpected Error Occurred", extraControl); /* Not a safe error to return to caller */
-        }
+
+        response = err;
     }
     finally
     {
@@ -160,6 +117,8 @@ exports.handler = async (event, context) =>
         logger.audit(true, auditRecord);
     }
 
-    logger.info(response);
+    if(response instanceof Error)
+        throw response;
+
     return response;
 }

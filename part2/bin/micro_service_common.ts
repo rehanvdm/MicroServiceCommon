@@ -4,4 +4,4 @@ import * as cdk from '@aws-cdk/core';
 import { MicroServiceCommonStack } from '../lib/micro_service_common-stack';
 
 const app = new cdk.App();
-new MicroServiceCommonStack(app, 'MicroServiceCommon');
+new MicroServiceCommonStack(app, 'MicroServiceCommon-p2');

@@ -7,12 +7,30 @@ import logs = require('@aws-cdk/aws-logs');
 import cloudwatch = require('@aws-cdk/aws-cloudwatch');
 import sns = require('@aws-cdk/aws-sns');
 import cloudwatchactions = require('@aws-cdk/aws-cloudwatch-actions');
-
+import events = require('@aws-cdk/aws-events');
+import events_targets = require('@aws-cdk/aws-events-targets');
+import {EventBus} from "@aws-cdk/aws-events";
+import * as sqs from '@aws-cdk/aws-sqs';
 
 export class MicroServiceCommonStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps)
   {
     super(scope, id, props);
+
+      let dynTable = new dynamodb.Table(this, id+"-table",
+          {
+              tableName: id+"-table",
+              partitionKey: {
+                  name: 'PK',
+                  type: dynamodb.AttributeType.STRING
+              },
+              sortKey: {
+                  name: 'SK',
+                  type: dynamodb.AttributeType.STRING
+              },
+              billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+              removalPolicy: cdk.RemovalPolicy.DESTROY,
+          });
 
     const notificationsTopic = new sns.Topic(this, id+"-notifications-topic", {
           topicName: id+"-notifications-topic",
@@ -21,6 +39,7 @@ export class MicroServiceCommonStack extends cdk.Stack {
 
     let environment = "prod";
     let lambdaTimeout = 25;
+    let processDlq = new sqs.Queue(this, id+'-process-dlq');
     let apiLambda = new lambda.Function(this, id+"-lambda", {
                       functionName:  id+"-lambda",
                       code: new lambda.AssetCode('./src/lambda/api/'),
@@ -39,36 +58,29 @@ export class MicroServiceCommonStack extends cdk.Stack {
 
                         NOTIFICATIONS_TOPIC: notificationsTopic.topicArn,
                         SKIP_NOTIFICATIONS: "false", /* Helpful flag during testing */
-                        API_CLIENT_URL: ""
+                        DYNAMO_TABLE: dynTable.tableName
                       },
-                      tracing: lambda.Tracing.ACTIVE
+                      tracing: lambda.Tracing.ACTIVE,
+                      deadLetterQueue: processDlq,
+                      deadLetterQueueEnabled: true
                     });
     notificationsTopic.grantPublish(apiLambda);
+    dynTable.grantReadWriteData(apiLambda);
 
-    let apiName = id;
-    let api = new apigateway.RestApi(this, id+"-api", {
-                  restApiName: id,
-                  deployOptions: {
-                      stageName: environment,
-                      dataTraceEnabled: true,
-                      tracingEnabled: true,
-                      loggingLevel: apigateway.MethodLoggingLevel.OFF
-                  },
-                  defaultCorsPreflightOptions: {
-                      allowOrigins: apigateway.Cors.ALL_ORIGINS,
-                      allowMethods: apigateway.Cors.ALL_METHODS,
-                      allowHeaders: ["*"]
-                  },
-                });
 
-    api.root.addProxy({
-                          defaultIntegration: new apigateway.LambdaIntegration(apiLambda),
-                          anyMethod: true,
-                        });
+    const personRule = new events.Rule(this, id+"-all-person-client-rule", {
+      description: 'All events from the person service',
+      // eventBus: No need to specify if using the default
+      eventPattern: {
+          /* https://github.com/aws/aws-cdk/issues/6184 */
+          source: [{ prefix: "microservice.person.prod" }, { prefix: "microservice.client.prod" }] as any[],
+      }
+    });
+    personRule.addTarget(new events_targets.LambdaFunction(apiLambda));
 
-    new cdk.CfnOutput(this, 'NOTIFICATIONS_TOPIC', { value: notificationsTopic.topicArn });
-    new cdk.CfnOutput(this, 'API_URL', { value: api.url })
 
+      new cdk.CfnOutput(this, 'DYNAMO_TABLE', { value: dynTable.tableName });
+      new cdk.CfnOutput(this, 'NOTIFICATIONS_TOPIC', { value: notificationsTopic.topicArn });
     /* ==========================================================================================================
        =================================== Logging, Alarms & Dashboard ==========================================
        ========================================================================================================== */
@@ -174,24 +186,24 @@ export class MicroServiceCommonStack extends cdk.Stack {
     apiLambdaAlarmHardError.addAlarmAction(cwAlarmAction);
     apiLambdaAlarmHardError.addOkAction(cwAlarmAction);
 
-    let apiMetricCount =  new cloudwatch.Metric({
-      namespace: "AWS/ApiGateway",
-      metricName:'Count',
-      dimensions: { ApiName: apiName }
-    });
-    let apiAlarmHighUsage = new cloudwatch.Alarm(this,id+"ApiGatewayHeavyUsage", {
-      metric: apiMetricCount,
-      actionsEnabled: true,
-      alarmName: MetricToAlarmName(apiMetricCount),
-      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      threshold: 100,
-      period: cdk.Duration.minutes(1),
-      evaluationPeriods: 3,
-      statistic: "Sum",
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
-    });
-    apiAlarmHighUsage.addAlarmAction(cwAlarmAction);
-    apiAlarmHighUsage.addOkAction(cwAlarmAction);
+    // let apiMetricCount =  new cloudwatch.Metric({
+    //   namespace: "AWS/ApiGateway",
+    //   metricName:'Count',
+    //   dimensions: { ApiName: apiName }
+    // });
+    // let apiAlarmHighUsage = new cloudwatch.Alarm(this,id+"ApiGatewayHeavyUsage", {
+    //   metric: apiMetricCount,
+    //   actionsEnabled: true,
+    //   alarmName: MetricToAlarmName(apiMetricCount),
+    //   comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+    //   threshold: 100,
+    //   period: cdk.Duration.minutes(1),
+    //   evaluationPeriods: 3,
+    //   statistic: "Sum",
+    //   treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    // });
+    // apiAlarmHighUsage.addAlarmAction(cwAlarmAction);
+    // apiAlarmHighUsage.addOkAction(cwAlarmAction);
 
 
 
@@ -277,58 +289,53 @@ export class MicroServiceCommonStack extends cdk.Stack {
       )
     );
 
-    dashboard.addWidgets(new cloudwatch.TextWidget({
-      markdown: '# API Metrics',
-      width: 24
-    }));
-    dashboard.addWidgets(
-      new cloudwatch.Row(
-          new cloudwatch.AlarmWidget({title: "API High Usage", alarm: apiAlarmHighUsage}),
-          new cloudwatch.GraphWidget({
-              title: "API Duration",
-              left: [
-                  new cloudwatch.Metric({
-                      namespace: "AWS/ApiGateway",
-                      metricName:'Latency',
-                      dimensions:  { ApiName: apiName },
-                      statistic: "p95",
-                      label: "p95"
-                  }),
-                  new cloudwatch.Metric({
-                      namespace: "AWS/ApiGateway",
-                      metricName:'Latency',
-                      dimensions:  { ApiName: apiName },
-                      statistic: "Average",
-                      label: "Average"
-                  }),
-                  new cloudwatch.Metric({
-                      namespace: "AWS/ApiGateway",
-                      metricName:'Latency',
-                      dimensions:  { ApiName: apiName },
-                      statistic: "Maximum",
-                      label: "Maximum"
-                  }),
-              ],
-          }),
-          new cloudwatch.GraphWidget({
-              title: "API HTTP Errors",
-              left: [
-                  new cloudwatch.Metric({
-                      namespace: "AWS/ApiGateway",
-                      metricName:'5XXError',
-                      dimensions:  { ApiName: apiName },
-                      statistic: "Sum",
-                  }),
-                  new cloudwatch.Metric({
-                      namespace: "AWS/ApiGateway",
-                      metricName:'4XXError',
-                      dimensions:  { ApiName: apiName },
-                      statistic: "Sum",
-                  }),
-              ],
-          }),
-      )
-    );
+
+      dashboard.addWidgets(new cloudwatch.TextWidget({
+          markdown: '# Dynamo & SQS',
+          width: 24
+      }));
+      dashboard.addWidgets(
+          new cloudwatch.Row(
+              new cloudwatch.GraphWidget({
+                  title: "Dynamo Capacity",
+                  left: [
+                      new cloudwatch.Metric({
+                          label: "RCU",
+                          namespace: "AWS/DynamoDB",
+                          metricName:'ConsumedReadCapacityUnits',
+                          dimensions: { TableName: dynTable.tableName },
+                          statistic: "Sum",
+                      }),
+                      new cloudwatch.Metric({
+                          label: "WCU",
+                          namespace: "AWS/DynamoDB",
+                          metricName:'ConsumedWriteCapacityUnits',
+                          dimensions: { TableName: dynTable.tableName },
+                          statistic: "Sum",
+                      }),
+                  ],
+              }),
+              new cloudwatch.GraphWidget({
+                  title: "DLQ Messages",
+                  left: [
+                      new cloudwatch.Metric({
+                          label: 'Visible',
+                          namespace: "AWS/SQS",
+                          metricName:'ApproximateNumberOfMessagesVisible',
+                          dimensions: { QueueName: processDlq.queueName },
+                          statistic: "Sum",
+                      }),
+                      new cloudwatch.Metric({
+                          label: 'NOT Visible',
+                          namespace: "AWS/SQS",
+                          metricName:'ApproximateNumberOfMessagesNotVisible',
+                          dimensions: { QueueName: processDlq.queueName },
+                          statistic: "Sum",
+                      }),
+                  ],
+              }),
+          )
+      );
 
   }
 }

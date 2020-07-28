@@ -105,7 +105,7 @@ class Helper
 
     /* Setting Environment variables for Lambda here when Testing Dev only */
     async SetEnvironmentVariables(environment, version, build, timeOut, enableChaos, injectError, injectLatency,
-                                  notificationsTopic, skipExternalApiCalls, apiClientUrl)
+                                  notificationsTopic, skipExternalApiCalls, dynamoTable)
     {
         /* Read these from a file */
         process.env.ENVIRONMENT =  environment;
@@ -118,7 +118,7 @@ class Helper
 
         process.env.NOTIFICATIONS_TOPIC = notificationsTopic;
         process.env.SKIP_NOTIFICATIONS = skipExternalApiCalls;
-        process.env.API_CLIENT_URL = apiClientUrl;
+        process.env.DYNAMO_TABLE = dynamoTable;
 
         process.env.AWS_XRAY_CONTEXT_MISSING = "LOG_ERROR"; /* If we don't have the X-Ray client installed when testing locally. */
         process.env.AWS_XRAY_LOG_LEVEL  = "silent"; /* Silent all logs/errors coming from X-Ray when testing locally */
@@ -127,8 +127,9 @@ class Helper
 
 Helper.API_URL = "https://2ce8m8h7ia.execute-api.us-east-1.amazonaws.com/prod";
 Helper.NOTIFICATIONS_TOPIC = "arn:aws:sns:us-east-1:001768463823:MicroServiceCommon-notifications-topic";
-Helper.SKIP_NOTIFICATIONS = "true";
-Helper.API_CLIENT_URL = "https://mz7zlecpcc.execute-api.us-east-1.amazonaws.com/prod";
+// Helper.SKIP_NOTIFICATIONS = "true";
+Helper.SKIP_NOTIFICATIONS = "false";
+Helper.DYNAMO_TABLE = "MicroServiceCommon-p2-table";
 
 Helper.AWS_PROFILE_MAME = "rehan-demo";
 Helper.AWS_PROFILE_REGION = "us-east-1";

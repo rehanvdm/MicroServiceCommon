@@ -75,7 +75,22 @@ Events.prototype.API_GATEWAY_HTTP_PROXY_POST = function(resource, requestBody, a
 
     return ret;
 }
+Events.prototype.EVENT_BRIDGE = function(source, detailType, detail)
+{
+    var ret = {
+        "version": "0",
+        "id": "64c93ed6-99ce-e030-4448-82499ed69f21",
+        "detail-type": detailType,
+        "source": source,
+        "account": "123456789",
+        "time": "2020-07-25T04:04:22Z",
+        "region": "us-east-1",
+        "resources": [],
+        "detail": detail
+    };
 
+    return ret;
+}
 
 module.exports = Events;
 

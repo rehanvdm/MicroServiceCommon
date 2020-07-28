@@ -14,6 +14,9 @@
     "artillery-ping-pong": "artillery run ./test/load/ping-pong.yml"
   },
   "devDependencies": {
+    "@aws-cdk/aws-sqs": "1.45.0",
+    "@aws-cdk/aws-events-targets": "1.45.0",
+    "@aws-cdk/aws-events": "1.45.0",
     "@aws-cdk/aws-cloudwatch-actions": "1.45.0",
     "@aws-cdk/aws-sns": "1.45.0",
     "@aws-cdk/aws-cloudwatch": "1.45.0",
